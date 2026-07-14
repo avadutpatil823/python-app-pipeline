@@ -6,7 +6,7 @@ products = [
     {
         "id": 1,
         "name": "Gaming Laptop",
-        "price": "$998",
+        "price": "$999",
         "image": "https://picsum.photos/300/200?random=1"
     },
     {
