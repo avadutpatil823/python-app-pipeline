@@ -12,7 +12,7 @@ products = [
     {
         "id": 2,
         "name": "Wireless Headphones",
-        "price": "$149",
+        "price": "$159",
         "image": "https://picsum.photos/300/200?random=2"
     },
     {
