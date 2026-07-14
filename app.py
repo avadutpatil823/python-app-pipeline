@@ -2,12 +2,13 @@ from flask import Flask
 
 app = Flask(__name__)
 
-@app.route('/')
-def hello_world():
-    return 'Hello, World! This is my first CI/CD Pipeline from scratch.' \
-    'The pipeline is fully Automated!' \
-    'Finally Everything is working fine!'
+@app.route("/")
+def home():
+    return "Python Web App deployed using Jenkins + Docker + AWS ECR"
 
-if __name__ == '__main__':
-    # Listens on all network interfaces, essential for Docker
-    app.run(host='0.0.0.0', port=80)
+@app.route("/health")
+def health():
+    return "OK"
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=9999)
