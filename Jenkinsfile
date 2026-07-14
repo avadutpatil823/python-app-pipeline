@@ -1,32 +1,133 @@
 pipeline {
-    agent any // This means the pipeline can run on any available Jenkins agent.
+
+    agent any
+
+    environment {
+        AWS_REGION = 'ap-south-1'
+        ACCOUNT_ID = '042729137733'
+
+        IMAGE_NAME = 'python-web-app'
+        IMAGE_TAG = "${BUILD_NUMBER}"
+
+        REPOSITORY = "${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${IMAGE_NAME}"
+
+        SERVER = '13.207.239.166'
+    }
 
     stages {
-        stage('Build Docker Image') {
+
+        stage('Checkout Source') {
             steps {
-                // We use 'sh' because our Jenkins server is running on Linux (Ubuntu).
-                sh 'docker build -t adityakonda/python-app .'
+                checkout scm
             }
         }
-        stage('Push to Docker Hub') {
+
+        stage('Build Docker Image') {
             steps {
-                // This block securely accesses the credentials we will create in Jenkins.
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh 'docker login -u $DOCKER_USER -p $DOCKER_PASS'
-                    sh 'docker push adityakonda/python-app'
+                sh """
+                docker build \
+                -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                """
+            }
+        }
+
+        stage('Login to Amazon ECR') {
+            steps {
+                sh """
+                aws ecr get-login-password --region ${AWS_REGION} | \
+                docker login \
+                --username AWS \
+                --password-stdin ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+                """
+            }
+        }
+
+        stage('Tag Docker Image') {
+            steps {
+                sh """
+                docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${REPOSITORY}:${IMAGE_TAG}
+
+                docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${REPOSITORY}:latest
+                """
+            }
+        }
+
+        stage('Push Image to Amazon ECR') {
+            steps {
+                sh """
+                docker push ${REPOSITORY}:${IMAGE_TAG}
+                docker push ${REPOSITORY}:latest
+                """
+            }
+        }
+
+        stage('Deploy to Application EC2') {
+
+            steps {
+
+                sshagent(credentials: ['application-server']) {
+
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ec2-user@${SERVER} '
+
+                    aws ecr get-login-password --region ${AWS_REGION} | \
+                    docker login \
+                    --username AWS \
+                    --password-stdin ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+
+                    docker pull ${REPOSITORY}:latest
+
+                    docker stop python-web-app || true
+
+                    docker rm python-web-app || true
+
+                    docker image prune -f
+
+                    docker run -d \
+                        --name python-web-app \
+                        --restart always \
+                        -p 9999:9999 \
+                        ${REPOSITORY}:latest
+
+                    docker ps
+
+                    '
+                    """
                 }
             }
         }
-        stage('Deploy Application') {
-            steps {
-                // Stop and remove any old container to avoid conflicts.
-                // The '|| true' part ensures the command doesn't fail if the container doesn't exist yet.
-                sh 'docker stop python-app-container || true'
-                sh 'docker rm python-app-container || true'
 
-                // Run the new container from the fresh image we just pushed to Docker Hub.
-                sh 'docker run -d --name python-app-container -p 80:80 adityakonda/python-app'
+        stage('Deployment Verification') {
+            steps {
+                sh """
+                curl -I http://${SERVER}:9999 || true
+                """
             }
+        }
+
+    }
+
+    post {
+
+        success {
+
+            echo "========================================="
+            echo "BUILD SUCCESSFUL"
+            echo "Python Application Successfully Deployed"
+            echo "Application URL : http://${SERVER}:9999"
+            echo "========================================="
+        }
+
+        failure {
+
+            echo "========================================="
+            echo "BUILD FAILED"
+            echo "Please check Jenkins Console Output"
+            echo "========================================="
+        }
+
+        always {
+            cleanWs()
         }
     }
 }
